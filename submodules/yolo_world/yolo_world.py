@@ -6,7 +6,7 @@ from mmengine.runner import Runner
 from mmengine.runner.amp import autocast
 from torchvision.ops import nms
 import sys
-sys.path.append('/data/yyang/workspace/magiclidar/submodules')
+sys.path.append('submodules')
 
 class_names = ("car")
 
@@ -24,7 +24,7 @@ class YOLO_WORLD:
         cfg = Config.fromfile(
             config_file_path
         )
-        cfg.work_dir = "/data/yyang/workspace/magiclidar/temp_test/workdir"
+        cfg.work_dir = "temp_test/workdir"
         cfg.load_from = pretrained_weight_path
         self.runner = Runner.from_cfg(cfg)
         self.runner.call_hook("before_run")

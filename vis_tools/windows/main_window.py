@@ -56,7 +56,7 @@ class MainWindow(QWidget):
         self.results_pkl_select_cbox = QComboBox()
         self.results_pkl_select_cbox.activated.connect(self.results_pkl_selected)
         self.dataload_layout.addWidget(self.results_pkl_select_cbox)
-        all_files = os.listdir('/data/yyang/workspace/magiclidar/exps/record_results')
+        all_files = os.listdir('exps/record_results')
         pkl_files = [f for f in all_files if f.endswith('.pkl')]
         self.results_pkl_select_cbox.addItems(pkl_files)
 
@@ -130,7 +130,7 @@ class MainWindow(QWidget):
         self.show_sample()
 
     def update_data_infos(self):
-        with open(os.path.join('/data/yyang/workspace/magiclidar/exps/record_results', self.results_pkl), 'rb') as f:
+        with open(os.path.join('exps/record_results', self.results_pkl), 'rb') as f:
             self.data_infos = pickle.load(f)
         self.frame_list.clear()
         self.frame_list.addItems([f'sample_{i}' for i in range(len(self.data_infos))])

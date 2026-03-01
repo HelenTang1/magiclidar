@@ -2,7 +2,7 @@ import argparse
 import numpy as np
 
 def get_args_parser():
-    parser = argparse.ArgumentParser('Beauty DETR', add_help=False)
+    parser = argparse.ArgumentParser('Talk2event', add_help=False)
     
     parser.add_argument("--run_name", default="", type=str)
 
@@ -26,33 +26,6 @@ def get_args_parser():
         type=str,
         choices=("step", "multistep", "linear_with_warmup", "all_linear_with_warmup"),
     )
-    parser.add_argument("--coco_path", type=str, default="")
-    parser.add_argument(
-        "--coco_path_refcoco",
-        type=str,
-        default=""
-    )
-    parser.add_argument(
-        "--coco_boxes_path",
-        type=str,
-        default=""
-    )
-    parser.add_argument(
-        "--vg_boxes_path",
-        type=str,
-        default=""
-    )
-    parser.add_argument(
-        "--flickr_boxes_path",
-        type=str,
-        default=""
-    )
-    parser.add_argument("--vg_img_path", type=str, default="")
-    parser.add_argument("--vg_ann_path", type=str, default="")
-    parser.add_argument("--custom_coco_img_path_val", type=str, default="")
-    parser.add_argument("--custom_coco_img_path_train", type=str, default="")
-    parser.add_argument("--custom_coco_ann_path", type=str, default="")
-    parser.add_argument("--custom_coco_id2name_path", type=str, default="")
     parser.add_argument('--lr', default=1e-5, type=float)
     parser.add_argument('--lr_backbone_names', default=["backbone.0"], type=str, nargs='+')
     parser.add_argument("--fraction_warmup_steps", default=0.01, type=float, help="Fraction of total number of steps")
@@ -192,19 +165,18 @@ def get_args_parser():
     parser.add_argument('--wandb', default=False, action='store_true')    
     parser.add_argument('--run_dir', default='exp1')
     parser.add_argument('--butd', default=False)
-    parser.add_argument(
-        "--epoch_chunks",
-        default=-1,
-        type=int,
-        help="If greater than 0, will split the training set into chunks and validate/checkpoint after each chunk",
-    )
-    parser.add_argument('--visualize_custom_image', default=False, action='store_true')
     parser.add_argument('--custom_text', default="all objects", type=str)
     parser.add_argument('--img_path', default='img.jpg', type=str)
     parser.add_argument('--with_learned_class_embeddings', default=True, action='store_true')
     parser.add_argument('--embeddings_path', type=str, default="")
     parser.add_argument("--new_contrastive", default=True, action='store_true')
     parser.add_argument("--large_scale", default=False, action='store_true')
+    parser.add_argument(
+        "--talk2event_src_path",
+        default="/dataset/shared/magic/",
+        type=str,
+        help="Root directory for Talk2Event data",
+    )
 
     return parser
 

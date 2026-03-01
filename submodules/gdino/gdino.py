@@ -38,7 +38,7 @@ def decode_box(box, image_shape):
 class GroundingDino:
     # def __init__(self, pretrained_weight_path, m3ed_name = ("person, bicycle, car, motorcycle, bus, train, truck, horse")):
     def __init__(self, 
-                 config_path="/data/yyang/workspace/magiclidar/submodules/gdino/configs/GroundingDINO_SwinT_OGC.py",
+                 config_path="submodules/gdino/configs/GroundingDINO_SwinT_OGC.py",
                  pretrained_weight_path="submodules/pretrained/groundingdino_swint_ogc.pth", 
                  ):
         self.pretrained_weight_path = pretrained_weight_path
@@ -70,7 +70,7 @@ if __name__ == "__main__":
     import os
     os.environ['CUDA_VISIBLE_DEVICES']='2'
 
-    model = load_model("/data/yyang/workspace/magiclidar/submodules/gdino/configs/GroundingDINO_SwinT_OGC.py", "submodules/pretrained/groundingdino_swint_ogc.pth")
+    model = load_model("submodules/gdino/configs/GroundingDINO_SwinT_OGC.py", "submodules/pretrained/groundingdino_swint_ogc.pth")
     IMAGE_PATH = "temp_test/000157.png"
     TEXT_PROMPT = "a white car facing the viewer."
     BOX_TRESHOLD = 0.0

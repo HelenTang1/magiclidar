@@ -1,6 +1,5 @@
 import sys
 import torch.nn as nn
-sys.path.append("/data/yyang/workspace/magiclidar")
 from submodules.owl_vit.owl_vitv2 import OWL_VOTV2
 from datasets import build_dataset
 

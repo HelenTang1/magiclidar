@@ -20,9 +20,6 @@ from numpy.lib.shape_base import expand_dims
 
 import torch
 import utils.misc as utils
-from datasets.bdetr_coco_eval import CocoEvaluator
-from datasets.refexp import RefExpEvaluator
-from datasets.flickr_eval import FlickrEvaluator
 from datasets.data_prefetcher import data_prefetcher, targets_to
 from datasets.visualize import visualize_inputs, visualize_coco
 from utils.optim import update_ema, adjust_learning_rate
@@ -156,7 +153,6 @@ def evaluate(
     device,
     postprocessors: Dict[str, torch.nn.Module],
     weight_dict: Dict[str, float],
-    evaluator_list,
     args,
     epoch=0,
     wandb=None
@@ -226,98 +222,9 @@ def evaluate(
         orig_target_sizes = torch.stack([t["orig_size"] for t in targets], dim=0)
         results = postprocessors['bbox'](outputs, orig_target_sizes)
         
-        flickr_res = [] if "flickr_bbox" in postprocessors.keys() else None
-        if "flickr_bbox" in postprocessors.keys():
-            image_ids = [t["original_img_id"] for t in targets]
-            sentence_ids = [t["sentence_id"] for t in targets]
-            items_per_batch_element = [t["nb_eval"] for t in targets]
-            positive_map_eval = torch.cat(
-                [t["positive_map_eval"] for t in targets]
-            ).to(device)
-            flickr_results = postprocessors["flickr_bbox"](
-                outputs, orig_target_sizes, positive_map_eval, items_per_batch_element,
-                contrastive=False
-            )
-            assert len(flickr_results) == len(image_ids) == len(sentence_ids)
-            for im_id, sent_id, output in zip(image_ids, sentence_ids, flickr_results):
-                flickr_res.append({"image_id": im_id, "sentence_id": sent_id, "boxes": output})
-            
-            if args.visualize and curr_step % 10 == 0:
-                if "butd_boxes" in targets[0]:
-                    results['image_ids'] = [target['image_id'].item() for target in targets]
-                    results['butd_boxes'] = [target['butd_boxes'] for target in targets]
-                    results['butd_scores'] = [target['butd_scores'] for target in targets]
-                    results['butd_masks'] = [target['butd_masks'] for target in targets]
-                    results['butd_object_ids'] = [target['butd_classes'] for target in targets]
-                    results['orig_target_sizes'] = orig_target_sizes
-                    img, _ = samples.decompose()
-                    results["imgs"] = img.detach().cpu().numpy()
-                    visualize_inputs(results)
-        for evaluator in evaluator_list:
-            if isinstance(evaluator, FlickrEvaluator):
-                    evaluator.update(flickr_res)
-            elif isinstance(evaluator, RefExpEvaluator):
-                results['positive_map'] = positive_map
-                results['proj_tokens'] = outputs['proj_tokens']
-                results['image_ids'] = [target['image_id'].item() for target in targets]
-                if "butd_boxes" in targets[0]:
-                    results['butd_boxes'] = [target['butd_boxes'] for target in targets]
-                    results['butd_scores'] = [target['butd_scores'] for target in targets]
-                    results['butd_masks'] = [target['butd_masks'] for target in targets]
-                    results['butd_object_ids'] = [target['butd_classes'] for target in targets]
-                    results['orig_target_sizes'] = orig_target_sizes
-                evaluator.evaluate(results)
-                if args.visualize and curr_step % 10 == 0:
-                    img, _ = samples.decompose()
-                    results["imgs"] = img.detach().cpu().numpy()
-                    evaluator.visualize_refexp(results)    
-            else:
-                res = {
-                    target['image_id'].item(): output
-                    for target, output in zip(targets, results['last_predictions'])
-                }
-                if args.visualize and curr_step % 10 == 0:
-                    if "butd_boxes" in targets[0]:
-                        results['image_ids'] = [target['image_id'].item() for target in targets]
-                        results['butd_boxes'] = [target['butd_boxes'] for target in targets]
-                        results['butd_scores'] = [target['butd_scores'] for target in targets]
-                        results['butd_masks'] = [target['butd_masks'] for target in targets]
-                        results['butd_object_ids'] = [target['butd_classes'] for target in targets]
-                        results['orig_target_sizes'] = orig_target_sizes
-                    results['caption'] = [target['caption'] for target in targets]
-                    results['gt_boxes'] = [target['boxes'] for target in targets]
-                    img, _ = samples.decompose()
-                    results["imgs"] = img.detach().cpu().numpy()
-                evaluator.update(res)
-            
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
-    for evaluator in evaluator_list:
-        evaluator.synchronize_between_processes()
-    refexp_res = None
-    for evaluator in evaluator_list:
-        if isinstance(evaluator, CocoEvaluator):
-            evaluator.accumulate()
-            evaluator.summarize()
-        elif isinstance(evaluator, (RefExpEvaluator)):
-            evaluator.print_stats()
-        elif isinstance(evaluator, FlickrEvaluator):
-            flickr_res = evaluator.summarize()
-        else:
-            assert False, "unknown evaluator"
     stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
-    for evaluator in evaluator_list:
-        if isinstance(evaluator, CocoEvaluator):
-            if "bbox" in postprocessors.keys():
-                stats["coco_eval_bbox"] = evaluator.coco_eval["bbox"].stats.tolist()
-            if "segm" in postprocessors.keys():
-                stats["coco_eval_masks"] = evaluator.coco_eval["segm"].stats.tolist()
-
-    if refexp_res is not None:
-        stats.update(refexp_res)
-
-    if flickr_res is not None:
-        stats["flickr"] = flickr_res
 
     return stats

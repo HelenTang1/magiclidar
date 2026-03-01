@@ -4,11 +4,11 @@ from torch.utils.data import DataLoader
 import argparse
 import sys
 import os
+from pathlib import Path
 from tqdm import tqdm 
 from collections import defaultdict
 import json
 import pickle
-sys.path.append("/data/dylu/project/butd_detr")
 from models import build_bdetr_model
 from datasets import build_dataset
 import utils.misc as utils
@@ -17,7 +17,6 @@ from vis_tools.utils.common import rescale_bboxes
 from vis_tools.utils.model_dataset import get_args_parser
 from datasets.data_prefetcher import data_prefetcher
 
-# os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 CLASSES = ['pedestrian', 'rider', 'car', 'bus', 'truck', 'bicycle', 'motorcycle']
 
@@ -117,44 +116,17 @@ class T2E_Metric:
                 recoder[num_objects] += 1
 
 class Tester:
-    def __init__(self, batch_size=16, num_object_list=[1,2,3,4,5,6,7,8,9,10]):
-        self.batch_size = batch_size
+    def __init__(self, args, num_object_list=[1,2,3,4,5,6,7,8,9,10]):
+        self.config = args
+        self.batch_size = args.batch_size
         self.num_object_list = num_object_list
         self.device = 'cuda'
         self.metric_recoder = T2E_Metric()
         for object_num in num_object_list:
             setattr(self, f'metric_recoder_{str(object_num).zfill(2)}', T2E_Metric())
-        self.init_args()
         self.build_model()
         self.build_dataloader()
         self.model.eval()
-
-    def init_args(self):
-        parser = argparse.ArgumentParser('Deformable', parents=[get_args_parser()], allow_abbrev=False )
-        # args = parser.parse_args()
-        args, unknown = parser.parse_known_args()
-
-        args.output_dir = "/dataset/yyang/magiclidar/log/all_fusion"
-        args.dataset_config = "configs/pretrain.json"
-        args.batch_size = 2
-        args.lr = 1e-5
-        args.lr_backbone = 1e-6
-        args.text_encoder_lr = 6e-6
-        args.weight_decay = 1e-4
-        args.large_scale = True
-        args.save_freq = 1
-        args.eval_skip = 1
-        args.ema
-        args.combine_datasets_val = ["talk2event"]
-        args.resume = "/dataset/yyang/magiclidar/log/all_fusion/checkpoint0015.pth"
-        args.eval
-        args.attribute = 'all'
-        args.event_config = 'models/event/backbone.yaml'
-        args.event_checkpoint = 'data/flexevent.ckpt'
-        args.modality = 'fusion'
-        args.moe_fusion = False
-
-        self.config = args
 
     def build_model(self):
         model, _, _ = \
@@ -318,12 +290,47 @@ class Tester:
             json.dump(final_rel_dict, f, ensure_ascii=False, indent=4)
 
 
-if __name__ == "__main__":
-    tester = Tester(batch_size=16)
-    tester.test()
-    # 1. ######################### number objects
-    # 1. ######################### number objects
+def get_test_args_parser():
+    parser = argparse.ArgumentParser(
+        'Deformable DETR evaluation script',
+        parents=[get_args_parser()],
+        allow_abbrev=False,
+    )
+    parser.add_argument("--attribute", default="fusion", type=str)
+    parser.add_argument("--modality", default="event", type=str)
+    parser.add_argument("--event_config", default="models/event/backbone.yaml", type=str)
+    parser.add_argument("--event_checkpoint", default="data/pretrain_event.ckpt", type=str)
+    parser.add_argument("--moe_fusion", dest="moe_fusion", action="store_true")
+    parser.set_defaults(
+        output_dir="log/image",
+        dataset_config="configs/pretrain.json",
+        batch_size=16,
+        lr=1e-5,
+        lr_backbone=1e-6,
+        text_encoder_lr=6e-6,
+        weight_decay=1e-4,
+        large_scale=True,
+        save_freq=1,
+        eval_skip=1,
+        combine_datasets_val=["talk2event"],
+        resume="log/image/checkpoint0016.pth",
+        attribute="fusion",
+        modality="event",
+        event_config="models/event/backbone.yaml",
+        event_checkpoint="data/pretrain_event.ckpt",
+        moe_fusion=True,
+    )
+    return parser
 
-    # 100 个最差的
-    # 
-    # ssh -X -L 7007:localhost:7007 -L 8020:localhost:8020 yyang@cvrp-gpu-6.d2.comp.nus.edu.sg
+
+def main(args):
+    if args.output_dir:
+        Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+    tester = Tester(args=args)
+    tester.test()
+
+
+if __name__ == "__main__":
+    parser = get_test_args_parser()
+    args = parser.parse_args()
+    main(args)

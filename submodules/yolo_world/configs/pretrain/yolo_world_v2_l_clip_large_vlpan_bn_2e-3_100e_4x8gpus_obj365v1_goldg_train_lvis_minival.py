@@ -1,4 +1,4 @@
-_base_ = ('/data/yyang/workspace/pure_projects/YOLO-World/third_party/mmyolo/configs/yolov8/'
+_base_ = ('YOLO-World/third_party/mmyolo/configs/yolov8/'
           'yolov8_l_syncbn_fast_8xb16-500e_coco.py')
 custom_imports = dict(imports=['yolo_world'],
                       allow_failed_imports=False)

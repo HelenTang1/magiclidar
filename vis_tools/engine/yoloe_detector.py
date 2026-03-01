@@ -1,6 +1,5 @@
 import sys
 import torch.nn as nn
-sys.path.append("/data/yyang/workspace/magiclidar")
 from submodules.yoloe.yolo_e import YOLO_E
 from datasets import build_dataset
 
@@ -11,7 +10,7 @@ class YoloE_Detector(nn.Module):
         self.init_detector()
     
     def init_detector(self):
-        self.model = YOLO_E('/data/yyang/workspace/magiclidar/submodules/pretrained/yoloe-11l-seg.pt')
+        self.model = YOLO_E('submodules/pretrained/yoloe-11l-seg.pt')
 
     def build_dataset(self):
         dataset = build_dataset(self.config.combine_datasets_val[0], "test", self.config)

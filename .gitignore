@@ -182,3 +182,4 @@ temp_test
 pretrained
 *.pt
 *exp_others.zip
+ckpt/

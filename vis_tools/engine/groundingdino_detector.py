@@ -1,6 +1,5 @@
 import sys
 import torch.nn as nn
-sys.path.append("/data/yyang/workspace/magiclidar")
 from submodules.gdino.gdino import GroundingDino
 from datasets import build_dataset
 
@@ -12,7 +11,7 @@ class GroundingDino_Detector(nn.Module):
     
     def init_detector(self):
         self.model = GroundingDino(
-                config_path="/data/yyang/workspace/magiclidar/submodules/gdino/configs/GroundingDINO_SwinT_OGC.py",
+                config_path="submodules/gdino/configs/GroundingDINO_SwinT_OGC.py",
                  pretrained_weight_path="submodules/pretrained/groundingdino_swint_ogc.pth", 
         )
 

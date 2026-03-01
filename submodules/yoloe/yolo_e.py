@@ -28,7 +28,7 @@ class YOLO_E:
 
 if __name__ == "__main__":
     import cv2
-    model = YOLO_E('/data/yyang/workspace/magiclidar/submodules/pretrained/yoloe-11l-seg.pt')
+    model = YOLO_E('submodules/pretrained/yoloe-11l-seg.pt')
     model.run_image(
-        cv2.imread('/data/yyang/workspace/magiclidar/temp_test/bus.jpg'),
+        cv2.imread('temp_test/bus.jpg'),
         ("a bus parked on left side of road"))

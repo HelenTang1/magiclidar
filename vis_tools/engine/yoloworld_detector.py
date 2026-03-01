@@ -1,8 +1,7 @@
 import argparse
 import sys
 import torch.nn as nn
-sys.path.append('/data/yyang/workspace/magiclidar/submodules')
-sys.path.append("/data/yyang/workspace/magiclidar")
+sys.path.append('submodules')
 from yolo_world.yolo_world import YOLO_WORLD
 from datasets import build_dataset
 
@@ -14,8 +13,8 @@ class YoloWorld_Detector(nn.Module):
     
     def init_detector(self):
         self.model = YOLO_WORLD(
-            config_file_path="/data/yyang/workspace/magiclidar/submodules/yolo_world/configs/pretrain/yolo_world_v2_l_vlpan_bn_2e-3_100e_4x8gpus_obj365v1_goldg_train_1280ft_lvis_minival.py",
-            pretrained_weight_path="/data/yyang/workspace/magiclidar/submodules/pretrained/yolo_world_v2_l_obj365v1_goldg_pretrain_1280ft-9babe3f6.pth"
+            config_file_path="submodules/yolo_world/configs/pretrain/yolo_world_v2_l_vlpan_bn_2e-3_100e_4x8gpus_obj365v1_goldg_train_1280ft_lvis_minival.py",
+            pretrained_weight_path="submodules/pretrained/yolo_world_v2_l_obj365v1_goldg_pretrain_1280ft-9babe3f6.pth"
         )
 
     def build_dataset(self):

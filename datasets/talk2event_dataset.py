@@ -21,7 +21,6 @@ cv2.ocl.setUseOpenCL(False)
 cv2.setNumThreads(0)
 
 CLASSES = ('pedestrian', 'rider', 'car', 'bus', 'truck', 'bicycle', 'motorcycle', 'train')
-SRC_PATH = "/dataset/shared/magiclidar/"  # TODO: 修改成自己的路径
 PIXEL_MEAN = [123.675, 116.280, 103.530]
 PIXEL_STD = [58.395, 57.120, 57.375]
 
@@ -31,10 +30,12 @@ class Talk2EventDataset(Dataset):
 
         print("Initializing Talk2EventDataset")
         self.attribute = args.attribute
+        self.src_path = args.talk2event_src_path
+        print(f"Talk2Event source path: {self.src_path}")
 
         self.datasize = [480,640]
         #path for meta data
-        meta_data_path = os.path.join(SRC_PATH, 'meta_data_v10', image_set)
+        meta_data_path = os.path.join(self.src_path, 'meta_data_v10', image_set)
 
         #sequence list
         self.dataset = []
@@ -53,8 +54,8 @@ class Talk2EventDataset(Dataset):
                     item = {}
 
                     item['id'] = data_item['id']
-                    item['image_path'] = os.path.join(SRC_PATH, data_item['image_path'].replace('.jpg', '.png'))
-                    item['event_path'] = os.path.join(SRC_PATH, data_item['event_path'])
+                    item['image_path'] = os.path.join(self.src_path, data_item['image_path'].replace('.jpg', '.png'))
+                    item['event_path'] = os.path.join(self.src_path, data_item['event_path'])
                     item['bbox'] = data_item['bbox']
                     item['class'] = data_item['class']
                     item['other_num_objects'] = data_item['number of other objects']

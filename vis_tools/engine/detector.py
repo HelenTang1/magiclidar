@@ -1,7 +1,6 @@
 import torch
 import argparse
 import sys
-sys.path.append("/data/dylu/project/butd_detr")
 from models import build_bdetr_model
 from datasets import build_dataset
 import utils.misc as utils
@@ -40,8 +39,8 @@ class Detector:
         args.eval
 
         args.event_config = 'models/event/backbone.yaml'
-        args.event_checkpoint = 'data/flexevent.ckpt'
-        args.modality = 'image'
+        args.event_checkpoint = 'data/pretrain_event.ckpt'
+        args.modality = 'event'
         self.config = args
 
     def build_model(self):

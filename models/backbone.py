@@ -157,8 +157,8 @@ class EventBackbone(nn.Module):
                     if k.startswith(prefix + ".")
         }
         missing, unexpected = self.event_backbone.load_state_dict(filtered_ckpt, strict = False)
-        print(" =======event backbone missing keys======== : ", missing)
-        print(" =======event backbone unexpected keys======: ", unexpected)
+        # print(" =======event backbone missing keys======== : ", missing)
+        # print(" =======event backbone unexpected keys======: ", unexpected)
         self.strides = [4, 2, 2, 2]
         self.num_channels = [64, 128, 256, 512]
 

@@ -16,41 +16,30 @@ import random
 import time
 from collections import namedtuple
 from copy import deepcopy
-from functools import partial
 from pathlib import Path
-from PIL import Image
 
-#cuda only visible to gpu0 
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "2" 
-import sys
-sys.path.append('/data/dylu/project/butd_detr')
 
 import numpy as np
 import torch
 from torch.utils.data import (
-    ConcatDataset, DataLoader, DistributedSampler
+    ConcatDataset, DataLoader
 )
 import utils.misc as utils
 import datasets
-from datasets import build_dataset, get_coco_api_from_dataset
-from datasets.bdetr_coco_eval import CocoEvaluator
-from datasets.refexp import RefExpEvaluator
-from datasets.flickr_eval import FlickrEvaluator
+from datasets import build_dataset
 import datasets.samplers as samplers
 from engine import evaluate, train_one_epoch
 from models import build_bdetr_model
 from models.postprocessors import build_postprocessors
-from visualize_image import visualize_results
 
 import ipdb
 st = ipdb.set_trace
-import gc
 import wandb
 import os
 
 def get_args_parser():
-    parser = argparse.ArgumentParser('Beauty DETR', add_help=False)
+    parser = argparse.ArgumentParser('Talk2event', add_help=False)
     
     parser.add_argument("--run_name", default="", type=str)
 
@@ -74,33 +63,6 @@ def get_args_parser():
         type=str,
         choices=("step", "multistep", "linear_with_warmup", "all_linear_with_warmup"),
     )
-    parser.add_argument("--coco_path", type=str, default="")
-    parser.add_argument(
-        "--coco_path_refcoco",
-        type=str,
-        default=""
-    )
-    parser.add_argument(
-        "--coco_boxes_path",
-        type=str,
-        default=""
-    )
-    parser.add_argument(
-        "--vg_boxes_path",
-        type=str,
-        default=""
-    )
-    parser.add_argument(
-        "--flickr_boxes_path",
-        type=str,
-        default=""
-    )
-    parser.add_argument("--vg_img_path", type=str, default="")
-    parser.add_argument("--vg_ann_path", type=str, default="")
-    parser.add_argument("--custom_coco_img_path_val", type=str, default="")
-    parser.add_argument("--custom_coco_img_path_train", type=str, default="")
-    parser.add_argument("--custom_coco_ann_path", type=str, default="")
-    parser.add_argument("--custom_coco_id2name_path", type=str, default="")
     parser.add_argument('--lr', default=5e-5, type=float)
     parser.add_argument('--lr_backbone_names', default=["backbone.0"], type=str, nargs='+')
     parser.add_argument("--fraction_warmup_steps", default=0.01, type=float, help="Fraction of total number of steps")
@@ -111,7 +73,7 @@ def get_args_parser():
     parser.add_argument('--batch_size', default=2, type=int)
     parser.add_argument('--val_batch_size', default=2, type=int)
     parser.add_argument('--weight_decay', default=1e-4, type=float)
-    parser.add_argument('--epochs', default=40, type=int)
+    parser.add_argument('--epochs', default=30, type=int)
     parser.add_argument('--lr_drop', default=10, type=int)
     parser.add_argument('--clip_max_norm', default=0.1, type=float,
                         help='gradient clipping max norm')
@@ -240,13 +202,6 @@ def get_args_parser():
     parser.add_argument('--wandb', default=True, action='store_true')    
     parser.add_argument('--run_dir', default='exp1')
     parser.add_argument('--butd', default=False)
-    parser.add_argument(
-        "--epoch_chunks",
-        default=-1,
-        type=int,
-        help="If greater than 0, will split the training set into chunks and validate/checkpoint after each chunk",
-    )
-    parser.add_argument('--visualize_custom_image', default=False, action='store_true')
     parser.add_argument('--custom_text', default="all objects", type=str)
     parser.add_argument('--img_path', default='img.jpg', type=str)
     parser.add_argument('--with_learned_class_embeddings', default=True, action='store_true')
@@ -254,9 +209,14 @@ def get_args_parser():
     parser.add_argument("--new_contrastive", default=True, action='store_true')
     parser.add_argument("--large_scale", default=True, action='store_true')
     parser.add_argument("--event_config", default='models/event/backbone.yaml')
-    parser.add_argument("--event_checkpoint", default='data/flexevent.ckpt')
-    parser.add_argument("--modality", default='image')
-    #appearance, status, relation_viewer, relation_others, all, fusion
+    parser.add_argument("--event_checkpoint", default='data/pretrain_event.ckpt')
+    parser.add_argument(
+        "--talk2event_src_path",
+        default="/dataset/shared/magic/",
+        type=str,
+        help="Root directory for Talk2Event data",
+    )
+    parser.add_argument("--modality", default='event')
     parser.add_argument("--attribute", default='fusion')
     parser.add_argument("--moe_fusion", default=True, action='store_true')
     return parser
@@ -349,48 +309,19 @@ def main(args):
             [build_dataset(name, image_set=image_set, args=args) for name in args.combine_datasets]#flickr, mixed, coco
         )
 
-        # To handle very big datasets, we chunk it into smaller parts.
-        if args.epoch_chunks > 0:#not use
-            print(
-                "Splitting the training set into {args.epoch_chunks} of size approximately "
-                f" {len(dataset_train) // args.epoch_chunks}"
-            )
-            chunks = torch.chunk(torch.arange(len(dataset_train)), args.epoch_chunks)
-            datasets = [torch.utils.data.Subset(dataset_train, chunk.tolist()) for chunk in chunks]
-            if args.distributed:
-                samplers_train = [DistributedSampler(ds) for ds in datasets]
-            else:
-                samplers_train = [torch.utils.data.RandomSampler(ds) for ds in datasets]
-
-            batch_samplers_train = [
-                torch.utils.data.BatchSampler(sampler_train, args.batch_size, drop_last=True)
-                for sampler_train in samplers_train
-            ]
-            assert len(batch_samplers_train) == len(datasets)
-            data_loaders_train = [
-                DataLoader(
-                    ds,
-                    batch_sampler=batch_sampler_train,
-                    collate_fn=partial(utils.collate_fn, False),
-                    num_workers=args.num_workers,
-                    pin_memory=True
-                )
-                for ds, batch_sampler_train in zip(datasets, batch_samplers_train)
-            ]
+        if args.distributed:
+            sampler_train = samplers.DistributedSampler(dataset_train)
         else:
-            if args.distributed:
-                sampler_train = samplers.DistributedSampler(dataset_train)
-            else:
-                sampler_train = torch.utils.data.RandomSampler(dataset_train)
+            sampler_train = torch.utils.data.RandomSampler(dataset_train)
 
-            batch_sampler_train = torch.utils.data.BatchSampler(sampler_train, args.batch_size, drop_last=True)
-            data_loader_train = DataLoader(
-                dataset_train,
-                batch_sampler=batch_sampler_train,
-                collate_fn=utils.collate_fn,
-                num_workers=args.num_workers,
-                pin_memory=True
-            )
+        batch_sampler_train = torch.utils.data.BatchSampler(sampler_train, args.batch_size, drop_last=True)
+        data_loader_train = DataLoader(
+            dataset_train,
+            batch_sampler=batch_sampler_train,
+            collate_fn=utils.collate_fn,
+            num_workers=args.num_workers,
+            pin_memory=True
+        )
 
     # Val dataset
     if len(args.combine_datasets_val) == 0:
@@ -417,8 +348,7 @@ def main(args):
             num_workers=args.num_workers,
             pin_memory=True
         )
-        base_ds = get_coco_api_from_dataset(dset)
-        val_tuples.append(Val_all(dataset_name=dset_name, dataloader=dataloader, base_ds=base_ds, evaluator_list=None))
+        val_tuples.append(Val_all(dataset_name=dset_name, dataloader=dataloader, base_ds=None, evaluator_list=None))
 
     output_dir = Path(args.output_dir)
     
@@ -434,6 +364,14 @@ def main(args):
         
         missing_keys, unexpected_keys = model_without_ddp.load_state_dict(checkpoint['model'], strict=False)
         unexpected_keys = [k for k in unexpected_keys if not (k.endswith('total_params') or k.endswith('total_ops'))]
+        num_model_keys = len(model_without_ddp.state_dict())
+        num_ckpt_keys = len(checkpoint['model'])
+        num_loaded_keys = num_model_keys - len(missing_keys)
+        print(
+            f"Resume summary: loaded={num_loaded_keys}, "
+            f"model_keys={num_model_keys}, ckpt_keys={num_ckpt_keys}, "
+            f"missing={len(missing_keys)}, unexpected={len(unexpected_keys)}"
+        )
         if len(missing_keys) > 0:
             print('Missing Keys: {}'.format(missing_keys))
         if len(unexpected_keys) > 0:
@@ -463,45 +401,14 @@ def main(args):
                 model_ema = deepcopy(model_without_ddp)
             else:
                 model_ema.load_state_dict(checkpoint["model_ema"], strict=False)
-    
-    def build_evaluator_list(base_ds, dataset_name, limit=-1):
-        """Helper function to build the list of evaluators for a given dataset"""
-        evaluator_list = []
-        iou_types = ["bbox"]
-
-        # evaluator_list.append(CocoEvaluator(base_ds, tuple(iou_types), useCats=False))
-        if "refexp" in dataset_name:
-            evaluator_list.append(RefExpEvaluator(base_ds, ("bbox"), limit=limit, visualize=args.visualize))
-        if "flickr" in dataset_name:
-            evaluator_list.append(
-                FlickrEvaluator(
-                    args.flickr_dataset_path,
-                    subset="test" if args.test else "val",
-                    merge_boxes=args.GT_type == "merged",
-                )
-            )
-        if "custom_coco" in dataset_name or "coco" in dataset_name:
-            evaluator_list.append(
-                CocoEvaluator(
-                    base_ds,
-                    tuple(iou_types),
-                    useCats=False)
-            )
-            
-        return evaluator_list
 
     if args.eval:
         test_stats = {}
         test_model = model_ema if model_ema is not None else model
         limit = 100 if args.debug else -1
         for i, item in enumerate(val_tuples):
-            evaluator_list = build_evaluator_list(
-                item.base_ds,
-                item.dataset_name,
-                limit=limit
-            )
+
             postprocessors = build_postprocessors(args, item.dataset_name)
-            item = item._replace(evaluator_list=evaluator_list)
             print(f"Evaluating {item.dataset_name}")
             curr_test_stats = evaluate(
                 model=test_model,
@@ -509,7 +416,6 @@ def main(args):
                 postprocessors=postprocessors,
                 weight_dict=weight_dict,
                 data_loader=item.dataloader,
-                evaluator_list=item.evaluator_list,
                 device=device,
                 args=args,
                 epoch=args.start_epoch,
@@ -524,11 +430,6 @@ def main(args):
         print(log_stats)
         return
     
-    if args.visualize_custom_image:#not use
-        img_path = args.img_path
-        img = Image.open(img_path)
-        visualize_results(model, img, args.custom_text)
-        return
     
     print("Start training")
     start_time = time.time()
@@ -571,12 +472,6 @@ def main(args):
             test_model = model_ema if model_ema is not None else model
             limit = 100 if args.debug else -1
             for i, item in enumerate(val_tuples):
-                evaluator_list = build_evaluator_list(
-                    item.base_ds,
-                    item.dataset_name,
-                    limit=limit
-                )
-                item = item._replace(evaluator_list=evaluator_list)
                 postprocessors = build_postprocessors(args, item.dataset_name)
                 print(f"Evaluating {item.dataset_name}")
                 curr_test_stats = evaluate(
@@ -585,7 +480,6 @@ def main(args):
                     postprocessors=postprocessors,
                     weight_dict=weight_dict,
                     data_loader=item.dataloader,
-                    evaluator_list=item.evaluator_list,
                     device=device,
                     args=args,
                     epoch=epoch,
