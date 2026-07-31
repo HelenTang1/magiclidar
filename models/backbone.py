@@ -31,6 +31,7 @@ import yaml
 from dotmap import DotMap
 from .event.maxvit_rnn import RNNDetector as MaxViTRNNDetector
 from .event.utils import _get_modified_hw_multiple_of
+from .scaleevent_backbone import ScaleEventBackbone
 
 class FrozenBatchNorm2d(torch.nn.Module):
     """
@@ -230,6 +231,17 @@ def build_backbone(args):
 
 def build_event_backbone(args):
     position_embedding = build_position_encoding(args)
-    backbone = EventBackbone(args)
+    backbone_type = str(getattr(args, "event_backbone_type", "rvt")).lower()
+
+    if backbone_type == "rvt":
+        backbone = EventBackbone(args)
+    elif backbone_type == "scaleevent":
+        backbone = ScaleEventBackbone(args)
+    else:
+        raise ValueError(
+            f"Unsupported event_backbone_type={backbone_type!r}; "
+            "choose 'rvt' or 'scaleevent'"
+        )
+
     model = Joiner(backbone, position_embedding)
     return model

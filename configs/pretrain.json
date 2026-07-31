@@ -1,7 +1,7 @@
 {
     "combine_datasets": ["talk2event"],
     "combine_datasets_val": ["talk2event"],
-    "talk2event_src_path": "YOUR DATA PATH",
+    "talk2event_src_path": "/20TB_04/yhtang_dataset/Talk2Event/talk2event/talk2event/",
     "epochs": 20,
     "lr_drop": 9
 }

@@ -122,7 +122,7 @@ dependencies:
       - charset-normalizer==2.0.12
       - chex==0.1.7
       - click==8.1.2
-      - clip==1.0
+        # - clip==1.0
       - cmake==3.31.6
       - colorama==0.4.6
       - colossalai==0.4.3
@@ -190,7 +190,7 @@ dependencies:
       - ipykernel==6.29.5
       - ipython==8.2.0
       - jax==0.4.13
-      - jaxlib==0.4.13+cuda12.cudnn89
+        # - jaxlib==0.4.13+cuda12.cudnn89
       - jedi==0.18.1
       - jmespath==0.10.0
       - joblib==1.1.0
@@ -219,11 +219,11 @@ dependencies:
       - mmdet==3.0.0
       - mmengine==0.10.7
       - mmyolo==0.6.0
-      - mobileclip==0.1.0
+        # - mobileclip==0.1.0
       - model-index==0.1.11
       - modelscope==1.25.0
       - msgpack==1.1.0
-      - multiscaledeformableattention==1.0
+        # - multiscaledeformableattention==1.0
       - natsort==8.4.0
       - networkx==2.8
       - ninja==1.13.0

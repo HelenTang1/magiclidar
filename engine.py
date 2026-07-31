@@ -15,7 +15,7 @@ import os
 import sys
 from typing import Iterable, Dict, Optional
 from numpy import positive
-from numpy.lib.shape_base import expand_dims
+from numpy import expand_dims
 
 
 import torch
