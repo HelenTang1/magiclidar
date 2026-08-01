@@ -199,6 +199,17 @@ class ScaleEventBackbone(nn.Module):
             getattr(args, "scaleevent_output_key", "x_norm_patchtokens")
         )
         self.freeze_encoder = bool(getattr(args, "scaleevent_freeze", True))
+        configured_trainable_blocks = getattr(args, "scaleevent_trainable_blocks", None)
+        if self.freeze_encoder:
+            self.trainable_blocks = 0
+        elif configured_trainable_blocks is None:
+            # Preserve the old scaleevent_freeze=false behavior: fine-tune all blocks.
+            self.trainable_blocks = -1
+        else:
+            self.trainable_blocks = int(configured_trainable_blocks)
+        self.train_final_norm = bool(
+            getattr(args, "scaleevent_train_final_norm", True)
+        )
 
         checkpoint_path = os.path.abspath(
             os.path.expanduser(args.scaleevent_checkpoint)
@@ -229,16 +240,22 @@ class ScaleEventBackbone(nn.Module):
                 f"First missing keys: {missing[:10]}"
             )
 
+        self._configure_encoder_trainability()
+        trainable_encoder_params = sum(
+            parameter.numel()
+            for parameter in self.encoder.parameters()
+            if parameter.requires_grad
+        )
+        total_encoder_params = sum(
+            parameter.numel() for parameter in self.encoder.parameters()
+        )
         print(
             "ScaleEvent encoder load summary: "
             f"checkpoint={checkpoint_path}, matched={len(matched_state)}, "
             f"missing={len(missing)}, unexpected={len(unexpected)}, "
-            f"freeze={self.freeze_encoder}"
+            f"trainable_blocks={self.trainable_blocks}, "
+            f"trainable_params={trainable_encoder_params:,}/{total_encoder_params:,}"
         )
-
-        if self.freeze_encoder:
-            self.encoder.requires_grad_(False)
-            self.encoder.eval()
 
         embed_dim = int(self.encoder.embed_dim)
         self.input_adapter = Talk2EventToScaleEventInput(
@@ -274,14 +291,70 @@ class ScaleEventBackbone(nn.Module):
         self.strides = [4, 8, 16, 32]
         self.num_channels = [64, 128, 256, 512]
 
+    def _configure_encoder_trainability(self) -> None:
+        """Freeze all, fine-tune a suffix, or fine-tune the full ScaleEvent ViT."""
+
+        self.encoder.requires_grad_(False)
+
+        if self.trainable_blocks == 0:
+            return
+
+        blocks = getattr(self.encoder, "blocks", None)
+        if blocks is None:
+            if self.trainable_blocks > 0:
+                raise AttributeError(
+                    "Partial ScaleEvent fine-tuning requires encoder.blocks, "
+                    "but the selected DINOv3 encoder does not expose it."
+                )
+            self.encoder.requires_grad_(True)
+            return
+
+        num_blocks = len(blocks)
+        if self.trainable_blocks < 0:
+            self.encoder.requires_grad_(True)
+            return
+        if self.trainable_blocks > num_blocks:
+            raise ValueError(
+                "scaleevent_trainable_blocks exceeds encoder depth: "
+                f"requested={self.trainable_blocks}, available={num_blocks}"
+            )
+
+        for block in blocks[-self.trainable_blocks:]:
+            block.requires_grad_(True)
+
+        if self.train_final_norm:
+            for norm_name in ("norm", "norm_head"):
+                norm = getattr(self.encoder, norm_name, None)
+                if isinstance(norm, nn.Module):
+                    norm.requires_grad_(True)
+
+    def _set_encoder_train_mode(self, mode: bool) -> None:
+        if self.trainable_blocks == 0:
+            self.encoder.eval()
+            return
+        if self.trainable_blocks < 0:
+            self.encoder.train(mode)
+            return
+
+        # Keep the frozen prefix deterministic and enable training behavior only
+        # for the trainable suffix and final normalization layers.
+        self.encoder.eval()
+        blocks = getattr(self.encoder, "blocks")
+        for block in blocks[-self.trainable_blocks:]:
+            block.train(mode)
+        if self.train_final_norm:
+            for norm_name in ("norm", "norm_head"):
+                norm = getattr(self.encoder, norm_name, None)
+                if isinstance(norm, nn.Module):
+                    norm.train(mode)
+
     def train(self, mode: bool = True):
         super().train(mode)
-        if self.freeze_encoder:
-            self.encoder.eval()
+        self._set_encoder_train_mode(mode)
         return self
 
     def _encode(self, x: Tensor) -> Tensor:
-        if self.freeze_encoder:
+        if self.trainable_blocks == 0:
             with torch.no_grad():
                 outputs = self.encoder.forward_features(x)
         else:

@@ -67,6 +67,12 @@ def get_args_parser():
     parser.add_argument('--lr_backbone_names', default=["backbone.0"], type=str, nargs='+')
     parser.add_argument("--fraction_warmup_steps", default=0.01, type=float, help="Fraction of total number of steps")
     parser.add_argument('--lr_backbone', default=1e-5, type=float)
+    parser.add_argument(
+        '--scaleevent_encoder_lr',
+        default=1e-6,
+        type=float,
+        help='Learning rate for trainable ScaleEvent encoder parameters.',
+    )
     parser.add_argument("--text_encoder_lr", default=6e-6, type=float)
     parser.add_argument('--lr_linear_proj_names', default=['reference_points', 'sampling_offsets'], type=str, nargs='+')
     parser.add_argument('--lr_linear_proj_mult', default=0.1, type=float)
@@ -271,24 +277,59 @@ def main(args):
     # for n, p in model_without_ddp.named_parameters():
     #     print(n)
 
-    # Set up optimizers
-    param_dicts = [
-        {
-            "params": [
-                p
-                for n, p in model_without_ddp.named_parameters()
-                if "backbone" not in n and "text_encoder" not in n and p.requires_grad
-            ]
-        },
-        {
-            "params": [p for n, p in model_without_ddp.named_parameters() if "backbone" in n and p.requires_grad],
-            "lr": args.lr_backbone,#backbone's learning rate
-        },
-        {
-            "params": [p for n, p in model_without_ddp.named_parameters() if "text_encoder" in n and p.requires_grad],
-            "lr": args.text_encoder_lr,#text encoder's learning rate
-        },
+    # Set up optimizers. ScaleEvent's pretrained ViT encoder is separated
+    # from the newly initialized feature pyramid so it can use a much smaller LR.
+    use_scaleevent = str(getattr(args, "event_backbone_type", "rvt")).lower() == "scaleevent"
+
+    def is_scaleevent_encoder_parameter(name):
+        if not use_scaleevent:
+            return False
+        return (
+            "backbone.0.encoder." in name
+            or "event_backbone.0.encoder." in name
+        )
+
+    named_trainable = [
+        (name, parameter)
+        for name, parameter in model_without_ddp.named_parameters()
+        if parameter.requires_grad
     ]
+    main_params = [
+        parameter
+        for name, parameter in named_trainable
+        if "backbone" not in name and "text_encoder" not in name
+    ]
+    backbone_params = [
+        parameter
+        for name, parameter in named_trainable
+        if "backbone" in name
+        and "text_encoder" not in name
+        and not is_scaleevent_encoder_parameter(name)
+    ]
+    text_encoder_params = [
+        parameter
+        for name, parameter in named_trainable
+        if "text_encoder" in name
+    ]
+    scaleevent_encoder_params = [
+        parameter
+        for name, parameter in named_trainable
+        if is_scaleevent_encoder_parameter(name)
+    ]
+
+    param_dicts = []
+    for role, params, lr in (
+        ("main", main_params, args.lr),
+        ("backbone", backbone_params, args.lr_backbone),
+        ("text_encoder", text_encoder_params, args.text_encoder_lr),
+        ("scaleevent_encoder", scaleevent_encoder_params, args.scaleevent_encoder_lr),
+    ):
+        if params:
+            param_dicts.append({"params": params, "lr": lr, "lr_role": role})
+            print(
+                f"Optimizer group {role}: "
+                f"parameters={sum(p.numel() for p in params):,}, lr={lr:.3e}"
+            )
     if args.sgd:#use adam, 1e-4
         optimizer = torch.optim.SGD(param_dicts, lr=args.lr, momentum=0.9,
                                     weight_decay=args.weight_decay)

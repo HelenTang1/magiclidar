@@ -1,0 +1,36 @@
+{
+  "combine_datasets": ["talk2event"],
+  "combine_datasets_val": ["talk2event"],
+  "talk2event_src_path": "/20TB_04/yhtang_dataset/Talk2Event/talk2event/talk2event/",
+
+  "modality": "event",
+  "attribute": "all",
+  "moe_fusion": false,
+
+  "event_backbone_type": "scaleevent",
+  "scaleevent_repo_root": "/home/yhtang/EventDDT_Private/submodules/ScaleEvent",
+  "scaleevent_checkpoint": "/20TB_04/yhtang_dataset/event_ddt_pretrained/ScaleEvent/checkpoints/ViTL16_Event_Encoder.pth",
+  "scaleevent_model_size": "l",
+  "scaleevent_output_key": "x_norm_patchtokens",
+  "scaleevent_freeze": false,
+  "scaleevent_trainable_blocks": -1,
+  "scaleevent_train_final_norm": true,
+  "scaleevent_strict_load": true,
+
+  "scaleevent_voxel_quantile": 0.99,
+  "scaleevent_voxel_neutral": 59.0,
+  "scaleevent_voxel_scale": 80.0,
+
+  "lr": 0.00005,
+  "lr_backbone": 0.00001,
+  "scaleevent_encoder_lr": 0.000001,
+  "text_encoder_lr": 0.000006,
+  "weight_decay": 0.0001,
+  "clip_max_norm": 0.1,
+
+  "num_feature_levels": 4,
+  "batch_size": 1,
+  "val_batch_size": 1,
+  "epochs": 20,
+  "lr_drop": 9
+}

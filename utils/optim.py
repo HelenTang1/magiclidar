@@ -53,7 +53,8 @@ def adjust_learning_rate(
               - fraction_warmup_steps(float) fraction of steps over which the lr will be increased to its peak.
               - lr(float): base learning rate
               - lr_backbone(float): learning rate of the backbone
-              - text_encoder_backbone(float): learning rate of the text encoder
+              - text_encoder_lr(float): learning rate of the text encoder
+              - scaleevent_encoder_lr(float): learning rate of the ScaleEvent encoder
               - schedule(str): the requested learning rate schedule:
                    "step": all lrs divided by 10 after lr_drop epochs
                    "multistep": divided by 2 after lr_drop epochs, then by 2 after every 50 epochs
@@ -91,8 +92,31 @@ def adjust_learning_rate(
     else:
         raise NotImplementedError
 
-    base_lrs = [args.lr, args.lr_backbone, args.text_encoder_lr]
-    gammas = [gamma, gamma, text_encoder_gamma]
-    assert len(optimizer.param_groups) == len(base_lrs)
-    for param_group, lr, gamma_group in zip(optimizer.param_groups, base_lrs, gammas):
-        param_group["lr"] = lr * gamma_group
+    base_lrs = {
+        "main": args.lr,
+        "backbone": args.lr_backbone,
+        "text_encoder": args.text_encoder_lr,
+        "scaleevent_encoder": getattr(args, "scaleevent_encoder_lr", args.lr_backbone),
+    }
+    gammas = {
+        "main": gamma,
+        "backbone": gamma,
+        "text_encoder": text_encoder_gamma,
+        "scaleevent_encoder": gamma,
+    }
+
+    for index, param_group in enumerate(optimizer.param_groups):
+        role = param_group.get("lr_role")
+        if role is None:
+            # Backward compatibility for checkpoints/configurations that use the
+            # original three fixed optimizer groups.
+            legacy_roles = ("main", "backbone", "text_encoder")
+            if index >= len(legacy_roles):
+                raise ValueError(
+                    "Optimizer group is missing lr_role and cannot be mapped "
+                    f"from legacy index {index}."
+                )
+            role = legacy_roles[index]
+        if role not in base_lrs:
+            raise ValueError(f"Unknown optimizer lr_role: {role!r}")
+        param_group["lr"] = base_lrs[role] * gammas[role]
