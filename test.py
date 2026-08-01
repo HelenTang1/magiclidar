@@ -323,6 +323,37 @@ def get_test_args_parser():
     return parser
 
 
+def parse_test_args(argv=None):
+    """Load dataset config as parser defaults, then apply explicit CLI overrides.
+
+    The official evaluation logic is unchanged. This only makes
+    ``--dataset_config`` behave consistently with ``main.py`` while preserving
+    the useful convention that explicit command-line values win over JSON.
+    """
+    parser = get_test_args_parser()
+
+    config_probe = argparse.ArgumentParser(add_help=False)
+    config_probe.add_argument(
+        "--dataset_config",
+        default=parser.get_default("dataset_config"),
+    )
+    config_args, _ = config_probe.parse_known_args(argv)
+
+    if config_args.dataset_config:
+        config_path = Path(config_args.dataset_config)
+        if not config_path.is_file():
+            parser.error(f"Dataset config does not exist: {config_path}")
+        with config_path.open("r", encoding="utf-8") as f:
+            dataset_cfg = json.load(f)
+        if not isinstance(dataset_cfg, dict):
+            parser.error(
+                f"Dataset config must contain a JSON object: {config_path}"
+            )
+        parser.set_defaults(**dataset_cfg)
+
+    return parser.parse_args(argv)
+
+
 def main(args):
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
@@ -331,6 +362,5 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = get_test_args_parser()
-    args = parser.parse_args()
+    args = parse_test_args()
     main(args)
