@@ -14,6 +14,7 @@ import random
 
 import PIL
 import torch
+import torch.nn.functional as torch_F
 import torchvision.transforms as T
 import torchvision.transforms.functional as F
 
@@ -132,7 +133,25 @@ def resize(image, event, target, size, max_size=None):
 
     size = get_size(image.size, size, max_size)
     rescaled_image = F.resize(image, size)
-    rescaled_event = F.resize(event, size)
+
+    # Keep event resizing consistent with the original Talk2Event code path.
+    # torchvision.transforms.functional.resize enables antialiasing by default
+    # in recent torchvision versions, which substantially smooths sparse event
+    # tensors and changes their value distribution. Treat the temporal/event
+    # channels as independent samples and use bilinear interpolation without
+    # antialiasing, matching the previously documented implementation in
+    # talk2event_dataset.py.
+    if not torch.is_tensor(event) or event.ndim != 3:
+        raise TypeError(
+            f"Expected event tensor with shape [C, H, W], got {type(event)!r} "
+            f"with shape {getattr(event, 'shape', None)}"
+        )
+    rescaled_event = torch_F.interpolate(
+        event.unsqueeze(1),
+        size=size,
+        mode="bilinear",
+        align_corners=False,
+    ).squeeze(1)
 
     if target is None:
         return rescaled_image, rescaled_event, None
