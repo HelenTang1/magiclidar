@@ -467,7 +467,8 @@ class SetCriterion(nn.Module):
         targets dicts must contain the key "labels" containing a tensor of dim [nb_target_boxes]
         """
 
-        logits = outputs["pred_logits"].log_softmax(-1)
+        # Keep the official token-alignment loss numerically stable under BF16 autocast.
+        logits = outputs["pred_logits"].float().log_softmax(-1)
         # BS x (num_queries) x (num_tokens)
 
         src_idx = self._get_src_permutation_idx(indices)
@@ -478,7 +479,9 @@ class SetCriterion(nn.Module):
             offset += len(targets[i]["boxes"])
         tgt_idx = torch.cat(tgt_idx)
 
-        tgt_pos = positive_map[tgt_idx]
+        tgt_pos = positive_map[tgt_idx].to(
+            device=logits.device, dtype=logits.dtype
+        )
         target_sim = torch.zeros_like(logits)
         target_sim[:, :, -1] = 1
         target_sim[src_idx] = tgt_pos
@@ -498,7 +501,8 @@ class SetCriterion(nn.Module):
 
     def loss_labels_st(self, outputs, targets, positive_map, indices, num_boxes, log=False):
         """Soft token prediction (with objectness)."""
-        logits = outputs["pred_logits"].log_softmax(-1)  # (B, Q, 256)
+        # Keep the official token-alignment loss numerically stable under BF16 autocast.
+        logits = outputs["pred_logits"].float().log_softmax(-1)  # (B, Q, 256)
 
         # Trick to get target indices across batches
         src_idx = self._get_src_permutation_idx(indices)
@@ -510,7 +514,9 @@ class SetCriterion(nn.Module):
         tgt_idx = torch.cat(tgt_idx)
 
         # Labels, by default lines map to the last element, no_object
-        tgt_pos = positive_map[tgt_idx]
+        tgt_pos = positive_map[tgt_idx].to(
+            device=logits.device, dtype=logits.dtype
+        )
         target_sim = torch.zeros_like(logits)
         # target_sim[:, :, -1] = 1
         # start of new loss
@@ -627,8 +633,11 @@ class SetCriterion(nn.Module):
         """
         assert 'pred_boxes' in outputs
         idx = self._get_src_permutation_idx(indices)
-        src_boxes = outputs['pred_boxes'][idx]
-        target_boxes = torch.cat([t['boxes'][i] for t, (_, i) in zip(targets, indices)], dim=0)
+        # Bounding-box losses are intentionally evaluated in FP32.
+        src_boxes = outputs['pred_boxes'][idx].float()
+        target_boxes = torch.cat(
+            [t['boxes'][i] for t, (_, i) in zip(targets, indices)], dim=0
+        ).to(device=src_boxes.device, dtype=src_boxes.dtype)
 
         loss_bbox = F.l1_loss(src_boxes, target_boxes, reduction='none')
 

@@ -83,8 +83,11 @@ class HungarianMatcher(nn.Module):
                 cost_class_list = []
                 positive_map = torch.chunk(positive_map, chunks=4, dim=0)
                 for idx, pred_logit in enumerate(outputs["pred_logits"]):
-                    out_prob = self.norm(pred_logit.flatten(0, 1))
-                    cost_class = -torch.matmul(out_prob, positive_map[idx].T)
+                    out_prob = self.norm(pred_logit.float().flatten(0, 1))
+                    positive_map_i = positive_map[idx].to(
+                        device=out_prob.device, dtype=out_prob.dtype
+                    )
+                    cost_class = -torch.matmul(out_prob, positive_map_i.T)
                     cost_class_list.append(cost_class)
                 
                 #cost_class is mean of the list
@@ -94,13 +97,18 @@ class HungarianMatcher(nn.Module):
 
                 bs, num_queries = outputs["pred_logits"].shape[:2]
                 # We flatten to compute the cost matrices in a batch
-                out_prob = self.norm(outputs["pred_logits"].flatten(0, 1))
-                cost_class = -torch.matmul(out_prob, positive_map.T)
+                out_prob = self.norm(outputs["pred_logits"].float().flatten(0, 1))
+                positive_map_for_cost = positive_map.to(
+                    device=out_prob.device, dtype=out_prob.dtype
+                )
+                cost_class = -torch.matmul(out_prob, positive_map_for_cost.T)
 
-            out_bbox = outputs["pred_boxes"].flatten(0, 1)  # [batch_size * num_queries, 4]
+            out_bbox = outputs["pred_boxes"].float().flatten(0, 1)  # [batch_size * num_queries, 4]
 
-            # Also concat the target labels and boxes
-            tgt_bbox = torch.cat([v["boxes"] for v in targets])
+            # Also concat the target labels and boxes. Matching is evaluated in FP32.
+            tgt_bbox = torch.cat([v["boxes"] for v in targets]).to(
+                device=out_bbox.device, dtype=out_bbox.dtype
+            )
             # assert len(tgt_bbox) == len(positive_map)
 
             # Compute the soft-cross entropy between the predicted token alignment and the GT one for each box
