@@ -364,6 +364,7 @@ def main(args):
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     print("Using standard xyxy IoU (corrected Talk2Event metric).")
+    print(f"Evaluation input size (H, W): {tuple(args.event_input_hw)}")
     tester = Tester(args=args)
     tester.test()
 

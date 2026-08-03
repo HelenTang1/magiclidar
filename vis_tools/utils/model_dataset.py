@@ -172,6 +172,18 @@ def get_args_parser():
     parser.add_argument("--new_contrastive", default=True, action='store_true')
     parser.add_argument("--large_scale", default=False, action='store_true')
     parser.add_argument(
+        "--event_input_hw",
+        default=(480, 640),
+        type=int,
+        nargs=2,
+        metavar=("HEIGHT", "WIDTH"),
+        help=(
+            "Spatial input size for both the event tensor and its paired image. "
+            "Bounding boxes are resized consistently. Example: "
+            "--event_input_hw 256 320"
+        ),
+    )
+    parser.add_argument(
         "--talk2event_src_path",
         default="/dataset/shared/magic/",
         type=str,

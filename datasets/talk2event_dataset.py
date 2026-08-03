@@ -33,7 +33,16 @@ class Talk2EventDataset(Dataset):
         self.src_path = args.talk2event_src_path
         print(f"Talk2Event source path: {self.src_path}")
 
-        self.datasize = [480,640]
+        requested_input_hw = getattr(args, "event_input_hw", (480, 640))
+        if not isinstance(requested_input_hw, (list, tuple)) or len(requested_input_hw) != 2:
+            raise ValueError(
+                f"event_input_hw must contain exactly (H, W), got {requested_input_hw}"
+            )
+        self.input_hw = tuple(int(x) for x in requested_input_hw)
+        if any(x <= 0 for x in self.input_hw):
+            raise ValueError(f"event_input_hw values must be positive, got {self.input_hw}")
+        print(f"Talk2Event input size (H, W): {self.input_hw}")
+
         #path for meta data
         meta_data_path = os.path.join(self.src_path, 'meta_data_v10', image_set)
 
@@ -99,8 +108,12 @@ class Talk2EventDataset(Dataset):
 
         #读取RoBERTa的tokenizer, 用于处理文本数据
         self.tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base")
-        self.transforms = make_coco_transforms(image_set, cautious=True)
-        self.custom_transforms = make_custom_transforms(image_set, cautious=True)
+        self.transforms = make_coco_transforms(
+            image_set, cautious=True, input_hw=self.input_hw
+        )
+        self.custom_transforms = make_custom_transforms(
+            image_set, cautious=True, input_hw=self.input_hw
+        )
 
         #image normalizer
         # pixel_mean = np.array(PIXEL_MEAN).reshape(3, 1, 1).astype(np.float32)
@@ -113,7 +126,7 @@ class Talk2EventDataset(Dataset):
         #load image
         image_path = data["image_path"]
         image = Image.open(image_path).convert("RGB")
-        H,W = self.datasize
+        W, H = image.size
 
         # #load event
         event_path = data["event_path"]
@@ -296,8 +309,9 @@ def find_fuzzy_span(caption, label):
     else:
         return None, None, None
 
-def make_coco_transforms(image_set, cautious=False):
+def make_coco_transforms(image_set, cautious=False, input_hw=None):
 
+    resize_to_input = [] if input_hw is None else [T.FixedResize(input_hw)]
     normalize = T.Compose([
         T.ToTensor(),
         T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
@@ -312,6 +326,7 @@ def make_coco_transforms(image_set, cautious=False):
         horizontal = [] if cautious else [T.RandomHorizontalFlip()]
         return T.Compose(
             horizontal
+            + resize_to_input
             + [
             # T.RandomSelect(
             #     T.RandomResize(scales, max_size=1333),
@@ -325,23 +340,24 @@ def make_coco_transforms(image_set, cautious=False):
         ])
 
     if image_set == 'val' or image_set == 'test':
-        return T.Compose([
+        return T.Compose(resize_to_input + [
             normalize,
         ])
         
     if image_set == 'train100':
-        return T.Compose([
+        return T.Compose(resize_to_input + [
             normalize,
         ])
     
 
     raise ValueError(f'unknown {image_set}')
 
-def make_custom_transforms(image_set, cautious=False):
+def make_custom_transforms(image_set, cautious=False, input_hw=None):
+    resize_to_input = [] if input_hw is None else [T.FixedResize(input_hw)]
     normalize = T.Compose([
         T.ToTensor(),
     ])
 
-    return T.Compose([
+    return T.Compose(resize_to_input + [
         normalize,
     ])

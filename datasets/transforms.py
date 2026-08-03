@@ -240,6 +240,23 @@ class RandomResize(object):
         return resize(img, event, target, size, self.max_size)
 
 
+class FixedResize(object):
+    """Resize image, event tensor, and boxes to an exact ``(H, W)``."""
+
+    def __init__(self, size_hw):
+        if not isinstance(size_hw, (list, tuple)) or len(size_hw) != 2:
+            raise ValueError(f"size_hw must be (H, W), got {size_hw}")
+        self.size_hw = tuple(int(x) for x in size_hw)
+        if any(x <= 0 for x in self.size_hw):
+            raise ValueError(f"size_hw values must be positive, got {self.size_hw}")
+
+    def __call__(self, img, event, target=None):
+        height, width = self.size_hw
+        # ``resize`` follows the original DETR convention for tuple sizes and
+        # expects (W, H), while this public transform accepts the clearer (H, W).
+        return resize(img, event, target, (width, height))
+
+
 class RandomPad(object):
     def __init__(self, max_pad):
         self.max_pad = max_pad
