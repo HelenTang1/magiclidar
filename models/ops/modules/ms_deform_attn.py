@@ -75,15 +75,58 @@ class MSDeformAttn(nn.Module):
         xavier_uniform_(self.output_proj.weight.data)
         constant_(self.output_proj.bias.data, 0.)
 
+    @staticmethod
+    def _run_cuda_op(
+        value,
+        input_spatial_shapes,
+        input_level_start_index,
+        sampling_locations,
+        attention_weights,
+        im2col_step,
+    ):
+        """Run the custom CUDA op in a dtype it supports.
+
+        The official extension supports FP32 and commonly FP16, but the built
+        kernel does not implement BF16. Under Lightning ``bf16-mixed`` the
+        tensors reaching this point are BF16, which raises
+        ``ms_deform_attn_forward_cuda not implemented for BFloat16``.
+
+        Only the unsupported custom op is promoted to FP32. The returned tensor
+        is cast back to the original dtype, so the rest of Talk2Event and
+        EventDDT remain under mixed precision. The casts are differentiable,
+        therefore backward also enters the custom extension with FP32 tensors.
+        """
+        output_dtype = value.dtype
+        if value.is_cuda and output_dtype == torch.bfloat16:
+            with torch.autocast(device_type="cuda", enabled=False):
+                output = MSDeformAttnFunction.apply(
+                    value.float(),
+                    input_spatial_shapes,
+                    input_level_start_index,
+                    sampling_locations.float(),
+                    attention_weights.float(),
+                    im2col_step,
+                )
+            return output.to(dtype=output_dtype)
+
+        return MSDeformAttnFunction.apply(
+            value,
+            input_spatial_shapes,
+            input_level_start_index,
+            sampling_locations,
+            attention_weights,
+            im2col_step,
+        )
+
     def forward(self, query, reference_points, input_flatten, input_spatial_shapes, input_level_start_index, input_padding_mask=None):
         """
         :param query                       (N, Length_{query}, C) (image features + pos_enc)
         :param reference_points            (N, Length_{query}, n_levels, 2), range in [0, 1], top-left (0,0), bottom-right (1, 1), including padding area
                                         or (N, Length_{query}, n_levels, 4), add additional (w, h) to form reference boxes
-        :param input_flatten               (N, \sum_{l=0}^{L-1} H_l \cdot W_l, C)  # (image features)
+        :param input_flatten               (N, \\sum_{l=0}^{L-1} H_l \\cdot W_l, C)  # (image features)
         :param input_spatial_shapes        (n_levels, 2), [(H_0, W_0), (H_1, W_1), ..., (H_{L-1}, W_{L-1})]
         :param input_level_start_index     (n_levels, ), [0, H_0*W_0, H_0*W_0+H_1*W_1, H_0*W_0+H_1*W_1+H_2*W_2, ..., H_0*W_0+H_1*W_1+...+H_{L-1}*W_{L-1}]
-        :param input_padding_mask          (N, \sum_{l=0}^{L-1} H_l \cdot W_l), True for padding elements, False for non-padding elements
+        :param input_padding_mask          (N, \\sum_{l=0}^{L-1} H_l \\cdot W_l), True for padding elements, False for non-padding elements
 
         :return output                     (N, Length_{query}, C)
         """
@@ -109,7 +152,13 @@ class MSDeformAttn(nn.Module):
         else:
             raise ValueError(
                 'Last dim of reference_points must be 2 or 4, but get {} instead.'.format(reference_points.shape[-1]))
-        output = MSDeformAttnFunction.apply(
-            value, input_spatial_shapes, input_level_start_index, sampling_locations, attention_weights, self.im2col_step)
+        output = self._run_cuda_op(
+            value,
+            input_spatial_shapes,
+            input_level_start_index,
+            sampling_locations,
+            attention_weights,
+            self.im2col_step,
+        )
         output = self.output_proj(output)
         return output
