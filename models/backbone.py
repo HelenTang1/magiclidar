@@ -124,11 +124,8 @@ class EventBackbone(nn.Module):
             raise ValueError(f"event_input_hw must contain (H, W), got {requested_event_hw}")
 
         mdl_hw = _get_modified_hw_multiple_of(hw=requested_event_hw, multiple_of=multiple_of)
-        if mdl_hw != requested_event_hw:
-            raise ValueError(
-                f"event_input_hw={requested_event_hw} must be divisible by {multiple_of}; "
-                f"use the compatible size {mdl_hw} instead."
-            )
+        self.requested_event_hw = requested_event_hw
+        self.model_event_hw = mdl_hw
         backbone_cfg.in_res_hw = mdl_hw
 
         attention_cfg = backbone_cfg.stage.attention
@@ -138,7 +135,17 @@ class EventBackbone(nn.Module):
         )
         assert (mdl_hw[0] // 32) % partition_size[0] == 0, f'{mdl_hw[0]=}, {partition_size[0]=}'
         assert (mdl_hw[1] // 32) % partition_size[1] == 0, f'{mdl_hw[1]=}, {partition_size[1]=}'
-        print(f'Set event input size: {mdl_hw}; partition sizes: {partition_size}')
+        if mdl_hw == requested_event_hw:
+            print(
+                f'Set event input size: {requested_event_hw}; '
+                f'partition sizes: {partition_size}'
+            )
+        else:
+            print(
+                f'Set event data size: {requested_event_hw}; '
+                f'pad inside RVT to: {mdl_hw}; '
+                f'partition sizes: {partition_size}'
+            )
         attention_cfg.partition_size = partition_size
 
         self.event_backbone = MaxViTRNNDetector(backbone_cfg)
@@ -156,10 +163,28 @@ class EventBackbone(nn.Module):
         self.num_channels = [64, 128, 256, 512]
 
     def forward(self, tensor_list: NestedTensor):
-        xs = self.event_backbone(tensor_list.tensors)
+        tensors, input_mask = tensor_list.decompose()
+        input_hw = tuple(int(x) for x in tensors.shape[-2:])
+        if input_hw != self.requested_event_hw:
+            raise ValueError(
+                f"RVT received event tensor size {input_hw}, but --input_size "
+                f"was set to {self.requested_event_hw}."
+            )
+
+        pad_h = self.model_event_hw[0] - input_hw[0]
+        pad_w = self.model_event_hw[1] - input_hw[1]
+        if pad_h < 0 or pad_w < 0:
+            raise ValueError(
+                f"RVT model canvas {self.model_event_hw} is smaller than input {input_hw}."
+            )
+        if pad_h or pad_w:
+            tensors = F.pad(tensors, (0, pad_w, 0, pad_h), value=0)
+            input_mask = F.pad(input_mask, (0, pad_w, 0, pad_h), value=True)
+
+        xs = self.event_backbone(tensors)
         out: Dict[str, NestedTensor] = {}
         for name, x in xs.items():
-            m = tensor_list.mask
+            m = input_mask
             assert m is not None
             mask = F.interpolate(m[None].float(), size=x.shape[-2:]).to(torch.bool)[0]
             out[name] = NestedTensor(x, mask)

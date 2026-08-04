@@ -217,6 +217,19 @@ def get_args_parser():
     parser.add_argument("--event_config", default='models/event/backbone.yaml')
     parser.add_argument("--event_checkpoint", default='data/pretrain_event.ckpt')
     parser.add_argument(
+        "--input_size",
+        "--event_input_hw",
+        dest="event_input_hw",
+        default=(480, 640),
+        type=int,
+        nargs=2,
+        metavar=("HEIGHT", "WIDTH"),
+        help=(
+            "Exact Talk2Event image/event resize in (height width) order. "
+            "For example: --input_size 240 320."
+        ),
+    )
+    parser.add_argument(
         "--talk2event_src_path",
         default="/dataset/shared/magic/",
         type=str,
@@ -228,19 +241,53 @@ def get_args_parser():
     return parser
 
 
+def parse_main_args(argv=None):
+    """Load JSON values as defaults, then let explicit CLI values win.
+
+    The previous code updated ``args`` from the JSON inside ``main``. That
+    meant values such as ``--batch_size 2`` were silently overwritten by the
+    dataset config. Parsing the config as defaults preserves the expected
+    command-line behaviour and also makes ``--input_size`` controllable.
+    """
+    parser = argparse.ArgumentParser(
+        'Deformable DETR training and evaluation script',
+        parents=[get_args_parser()],
+        allow_abbrev=False,
+    )
+
+    config_probe = argparse.ArgumentParser(add_help=False)
+    config_probe.add_argument(
+        "--dataset_config",
+        default=parser.get_default("dataset_config"),
+    )
+    config_args, _ = config_probe.parse_known_args(argv)
+
+    if config_args.dataset_config:
+        config_path = Path(config_args.dataset_config)
+        if not config_path.is_file():
+            parser.error(f"Dataset config does not exist: {config_path}")
+        with config_path.open("r", encoding="utf-8") as f:
+            dataset_cfg = json.load(f)
+        if not isinstance(dataset_cfg, dict):
+            parser.error(
+                f"Dataset config must contain a JSON object: {config_path}"
+            )
+        parser.set_defaults(**dataset_cfg)
+
+    args = parser.parse_args(argv)
+    args.event_input_hw = tuple(int(x) for x in args.event_input_hw)
+    if any(x <= 0 for x in args.event_input_hw):
+        parser.error(
+            f"--input_size values must be positive, got {args.event_input_hw}"
+        )
+    return args
+
+
 def main(args):
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     utils.init_distributed_mode(args)
     torch.autograd.set_detect_anomaly(True)
     
-    # Update dataset specific configs
-    if args.dataset_config is not None:
-        # https://stackoverflow.com/a/16878364
-        d = vars(args)
-        with open(args.dataset_config, "r") as f:
-            cfg = json.load(f)#pretrain.json
-        d.update(cfg)
-        
     # print("git:\n  {}\n".format(utils.get_sha()))
     print(args)
 
@@ -564,8 +611,7 @@ def main(args):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser('Deformable DETR training and evaluation script', parents=[get_args_parser()])
-    args = parser.parse_args()
+    args = parse_main_args()
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     main(args)
